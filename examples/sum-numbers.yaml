@@ -1,0 +1,14 @@
+# Copyright IBM Inc. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Assumes a full ST4SD deployment because it extracts configuration metadata from
+# the `st4sd-runtime-service` ConfigMap
+
+apiVersion: st4sd.ibm.com/v1alpha1
+kind: Workflow
+metadata:
+  name: sum-numbers
+spec:
+  package:
+    url: https://github.com/st4sd/sum-numbers/
+    branch: main

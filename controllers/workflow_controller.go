@@ -40,7 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	st4sdv1alpha1 "github.ibm.com/st4sd/st4sd-runtime-k8s/api/v1alpha1"
+	st4sdv1alpha1 "github.com/st4sd/st4sd-runtime-k8s/api/v1alpha1"
 )
 
 const workflowFinalizer = "workflow.finalizer.st4sd.ibm.com"

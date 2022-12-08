@@ -41,15 +41,16 @@ spec:
 - Install [Go](https://go.dev/dl/) v1.19
 - [operator-sdk](https://v1-17-x.sdk.operatorframework.io/) v1.17x
 
-    ```bash
-    operator-sdk init --domain ibm.com --repo github.ibm.com/st4sd/st4sd-runtime-k8s
-    operator-sdk create api --group st4sd --version v1alpha1 --kind Workflow --resource --controller --namespaced=true
-    ```
-
-
 ## Development
 
 - Build the binaries: `make build`
+- If you want to start fresh with a different version of the operator sdk:
+
+    ```bash
+    operator-sdk init --domain ibm.com --repo github.com/st4sd/st4sd-runtime-k8s
+    operator-sdk create api --group st4sd --version v1alpha1 --kind Workflow --resource --controller --namespaced=true
+    ```
+
 - To modify the workflow schema:
   - Modifying [workflow_types.go](api/v1alpha1/workflow_types.go) accordingly
   - Execute `make generate`

@@ -21,8 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	st4sdv1alpha1 "github.ibm.com/st4sd/st4sd-runtime-k8s/api/v1alpha1"
-	"github.ibm.com/st4sd/st4sd-runtime-k8s/controllers"
+	st4sdv1alpha1 "github.com/st4sd/st4sd-runtime-k8s/api/v1alpha1"
+	"github.com/st4sd/st4sd-runtime-k8s/controllers"
 	//+kubebuilder:scaffold:imports
 )
 

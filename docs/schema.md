@@ -8,7 +8,7 @@ This repository introduces the [Workflow Custom Resource Definition (CRD)](confi
 
 ## Default values of Workflow Schema
 
-The workflow operator will use the contents of the `consumable-computing-config` ConfigMap (the ConfigMap that the [st4sd-runtime-service](https://github.ibm.com/st4sd/st4sd-runtime-service) uses) to fill in default values for information missing from the workflow YAML. This ConfigMap is also used by the Consumable Computing REST-API to generate Workflow YAML definitions.
+The workflow operator will use the contents of the `st4sd-runtime-service` ConfigMap (the ConfigMap that the [st4sd-runtime-service](https://github.com/st4sd/st4sd-runtime-service) uses) to fill in default values for information missing from the workflow YAML. This ConfigMap is also used by st4sd-runtime-service to generate Workflow YAML definitions.
 
 The workflow operator will parse the `config.json` data field of the ConfigMap and treat it as a JSON dictionary. It will then use the dictionary key/value pairs to fill in any missing fields of the Workflow YAML like so:
 
@@ -44,7 +44,10 @@ spec:
       https://github.com/mypackages/package.git 
              OR
       git@github.com/mypackages/package.git
+    # May contain up to 1 of branch and commitId
     branch: master # the branch of the package
+    commitId: 0399112b178fcb48a20124365ac6de1c96c3baee # Optional, must be fully resolved
+
     mount: /mygit # Optional, if omitted it will be mounted in /mnt/package
     gitsecret: git-creds # Optional, needed only in the case where spec.package.url
     # refers to a private repo - will also be filled with default value
@@ -149,9 +152,9 @@ spec:
         configMapKeyRef: ...
   # Image of the workflow scheduler that will orchestrate the execution of the workflow
   # Optional - can be filled in with default value  
-  image: res-st4sd-team-official-base-docker-local.artifactory.swg-devops.com/st4sd-runtime-k8s:latest
+  image: quay.io/st4sd/official-base/st4sd-runtime-core:latest
   # Image of the tool which will retrieve files from s3 bucket used as input
-  s3FetchFilesImage: s3fetchfiles:latest # Optional - can be filled in with default value
+  s3FetchFilesImage: quay.io/st4sd/official-base/st4sd-runtime-k8s-input-s3:latest # Optional
   command: "elaunch.py" #optional, if omitted it would be elaunch.py
   debug: false  #optional, if set to true will just echo the command passed to the container
 ```

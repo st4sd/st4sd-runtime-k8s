@@ -7,7 +7,7 @@ plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: st4sd-runtime-k8s
-repo: github.ibm.com/st4sd/st4sd-runtime-k8s
+repo: github.com/st4sd/st4sd-runtime-k8s
 resources:
 - api:
     crdVersion: v1
@@ -16,6 +16,6 @@ resources:
   domain: ibm.com
   group: st4sd
   kind: Workflow
-  path: github.ibm.com/st4sd/st4sd-runtime-k8s/api/v1alpha1
+  path: github.com/st4sd/st4sd-runtime-k8s/api/v1alpha1
   version: v1alpha1
 version: "3"

@@ -1,4 +1,4 @@
-module github.ibm.com/st4sd/st4sd-runtime-k8s
+module github.com/st4sd/st4sd-runtime-k8s
 
 go 1.19
 

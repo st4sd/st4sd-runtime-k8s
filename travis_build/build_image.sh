@@ -10,13 +10,16 @@ set -euxo pipefail -o xtrace
 
 export DO_PUSH=${DO_PUSH:-yes}
 export LABEL=${LABEL:-latest}
-docker login -u $DOCKER_USERNAME -p $DOCKER_TOKEN $DOCKER_REGISTRY
+docker login -u ${DOCKER_USERNAME} -p ${DOCKER_TOKEN} ${DOCKER_REGISTRY}
 
-IMG=${DOCKER_REGISTRY}/st4sd-runtime-k8s:${LABEL}-`arch` \
-       BUILDER_IMG=${DOCKER_REGISTRY}/mirror/golang:1.19 \
-       RUNTIME_IMG=${DOCKER_REGISTRY}/mirror/distroless:nonroot \
+docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_TOKEN}
+
+
+IMG=${IMAGE_BASE_URL}:${LABEL}-`arch` \
+       BUILDER_IMG=golang:1.19 \
+       RUNTIME_IMG=gcr.io/distroless/static:nonroot \
        make docker-build
 
 if [ "${DO_PUSH}" == "yes" ]; then
-  docker push "$DOCKER_REGISTRY/st4sd-runtime-k8s:${LABEL}-`arch`"
+  docker push "${IMAGE_BASE_URL}:${LABEL}-`arch`"
 fi

@@ -1,0 +1,81 @@
+services:
+  - docker
+
+language: go
+
+go: 1.19.x
+
+install: echo "no install"
+
+stages:
+  - name: validate-that-operator-builds
+    if: branch != main AND type != pull_request
+  - name: image
+    if: branch = main AND type != pull_request
+  - name: multiarch
+    if: branch = main AND type != pull_request
+  - name: deploy-to-dev
+    if: branch = main AND type != pull_request
+  - name: new-git-release
+    if: tag is present
+
+before_script:
+  - export DOCKER_REGISTRY=${DOCKER_REGISTRY:-quay.io}
+  - export IMAGE_NAME=${IMAGE_NAME:-/st4sd/official-base/st4sd-runtime-k8s}
+  - export IMAGE_BASE_URL="${DOCKER_REGISTRY}${IMAGE_NAME}"
+
+
+matrix:
+  include:
+  - stage: validate-that-operator-builds
+    os: linux
+    script:
+    - export LABEL=${TRAVIS_BRANCH}
+    - export DO_PUSH=no
+    - ./travis_build/build_image.sh
+  - stage: validate-that-operator-builds
+    os: linux-ppc64le
+    script:
+    - export LABEL=${TRAVIS_BRANCH}
+    - export DO_PUSH=no
+    - ./travis_build/build_image.sh
+
+  - stage: image
+    os: linux
+    script:
+    - ./travis_build/build_image.sh
+
+  - stage: image
+    os: linux-ppc64le
+    script:
+    - ./travis_build/build_image.sh
+
+  - stage: multiarch
+    script:
+      - export SRC_TAG_X8664="latest-x86_64"
+      - export SRC_TAG_PPC64LE="latest-ppc64le"
+      - export DST_TAG_X8664="x86_64"
+      - export DST_TAG_PPC64LE="ppc64le"
+      - export LABEL="latest"
+      - ./travis_build/build_multiarch.sh
+
+  - stage: deploy-to-dev
+    os: linux
+    env:
+      DEPLOY_TO="VE-5446-dev"
+    script:
+      - ./travis_build/redeploy_deploymentconfig.sh
+         "${VE_5446_DEV_PROJECT}" "${VE_5446_DEV_LOGIN_URL}" "${VE_5446_DEV_LOGIN_TOKEN}"
+
+  - stage: new-git-release
+    os: linux
+    services: docker
+    script:
+    - export DOCKER_CLI_EXPERIMENTAL=enabled
+    - docker login -u $DOCKER_USERNAME -p $DOCKER_TOKEN $DOCKER_REGISTRY
+    - docker manifest create ${IMAGE_BASE_URL}:${TRAVIS_TAG}
+      ${IMAGE_BASE_URL}:x86_64 ${IMAGE_BASE_URL}:ppc64le
+    - docker manifest push ${IMAGE_BASE_URL}:${TRAVIS_TAG}
+    - docker manifest create ${IMAGE_BASE_URL}:release-candidate
+      ${IMAGE_BASE_URL}:x86_64 ${IMAGE_BASE_URL}:ppc64le
+    - docker manifest push ${IMAGE_BASE_URL}:release-candidate

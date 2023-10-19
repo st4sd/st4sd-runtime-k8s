@@ -72,12 +72,16 @@ type WorkflowSpec struct {
 	Env []v1.EnvVar `json:"env,omitempty"`
 
 	// Information for fetching inputs from a S3 bucket
-	S3BucketInput     *S3BucketInfo `json:"s3BucketInput,omitempty"`
-	S3FetchFilesImage string        `json:"s3FetchFilesImage,omitempty"`
+	S3BucketInput     *DatashimS3BucketInfo `json:"s3BucketInput,omitempty"`
+	S3FetchFilesImage string                `json:"s3FetchFilesImage,omitempty"`
+}
+
+type DatashimS3BucketInfo struct {
+	Dataset      string `json:"dataset,omitempty"`
+	S3BucketInfo `json:"bucketInfo,omitempty"`
 }
 
 type S3BucketInfo struct {
-	Dataset         string          `json:"dataset,omitempty"`
 	AccessKeyID     S3InputVariable `json:"accessKeyID,omitempty"`
 	SecretAccessKey S3InputVariable `json:"secretAccessKey,omitempty"`
 	Endpoint        S3InputVariable `json:"endpoint,omitempty"`
@@ -104,14 +108,15 @@ type S3InputVariable struct {
 
 // +k8s:openapi-gen=true
 type Gitrepo struct {
-	URL           string `json:"url,omitempty"`
-	Branch        string `json:"branch,omitempty"`
-	CommitId      string `json:"commitId,omitempty"`
-	Mount         string `json:"mount,omitempty"`
-	Gitsecret     string `json:"gitsecret,omitempty"`
-	FromConfigMap string `json:"fromConfigMap,omitempty"`
-	FromPath      string `json:"fromPath,omitempty"`
-	WithManifest  string `json:"withManifest,omitempty"`
+	URL           string        `json:"url,omitempty"`
+	Branch        string        `json:"branch,omitempty"`
+	CommitId      string        `json:"commitId,omitempty"`
+	Mount         string        `json:"mount,omitempty"`
+	Gitsecret     string        `json:"gitsecret,omitempty"`
+	FromConfigMap string        `json:"fromConfigMap,omitempty"`
+	FromPath      string        `json:"fromPath,omitempty"`
+	WithManifest  string        `json:"withManifest,omitempty"`
+	S3            *S3BucketInfo `json:"s3,omitempty"`
 }
 
 // +k8s:openapi-gen=true
@@ -184,10 +189,10 @@ type ConsumableComputingConfig struct {
 	ImagePullSecrets        []string `json:"imagePullSecrets,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:path=workflows,shortName=wf
-//+kubebuilder:printcolumn:name="age",type="string",JSONPath=".metadata.creationTimestamp",description="Age of the workflow instance"
-//+kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.experimentstate",description="Status of the workflow instance"
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:path=workflows,shortName=wf
+// +kubebuilder:printcolumn:name="age",type="string",JSONPath=".metadata.creationTimestamp",description="Age of the workflow instance"
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.experimentstate",description="Status of the workflow instance"
 // Workflow is the Schema for the workflows API
 type Workflow struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -197,8 +202,8 @@ type Workflow struct {
 	Status WorkflowStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:resource:scope=Namespaced
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Namespaced
 // WorkflowList contains a list of Workflow
 type WorkflowList struct {
 	metav1.TypeMeta `json:",inline"`

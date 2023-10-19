@@ -364,6 +364,8 @@ func rewrite_absolute_paths(paths []string, new_root string) []string {
 func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod, error) {
 	// reqLogger := log.Log.WithValues("workflow", cr.ObjectMeta.Name)
 
+	fmt.Println(cr)
+
 	var user, _ = strconv.ParseInt(os.Getenv("USER_ID"), 10, 64)
 	var configmap_name = "st4sd-runtime-service"
 	if cm_name := os.Getenv("CONFIGMAP_NAME"); cm_name != "" {
@@ -380,12 +382,15 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 		WorkflowSourceUnknown          = "unknown"
 		WorkflowSourceInstance         = "instance"
 		WorkflowSourcePackageFromPath  = "fromPath"
+		WorkflowSourcePackageS3        = "s3"
 	)
 
 	packageSource := WorkflowSourceUnknown
 
 	if cr.Spec.Package != nil {
-		if strings.HasPrefix(cr.Spec.Package.URL, "https") {
+		if cr.Spec.Package.S3 != nil {
+			packageSource = WorkflowSourcePackageS3
+		} else if strings.HasPrefix(cr.Spec.Package.URL, "https") {
 			packageSource = WorkflowSourcePackageHTTPS
 		} else if strings.HasPrefix(cr.Spec.Package.URL, "git@") {
 			packageSource = WorkflowSourcePackageSSH
@@ -557,22 +562,10 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 		MountPath: workdir,
 	})
 
-	if (cr.Spec.Package != nil) && len(cr.Spec.Package.Gitsecret) > 0 {
-		var mode int32 = 288
-		gitsecretsVolume := corev1.Volume{
-			Name: "git-secrets-package",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName:  cr.Spec.Package.Gitsecret,
-					DefaultMode: &mode,
-				},
-			},
-		}
-		volumes = append(volumes, gitsecretsVolume)
-	}
-
-	gitConfigVolume := corev1.Volume{
-		Name: "git-sync-config",
+	// Necessary to override UID/GID
+	uidConfigVolumeName := "package-uid-config"
+	uidConfigVolume := corev1.Volume{
+		Name: uidConfigVolumeName,
 		VolumeSource: corev1.VolumeSource{
 			ConfigMap: &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{
@@ -581,193 +574,272 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 			},
 		},
 	}
-	volumes = append(volumes, gitConfigVolume)
+	volumes = append(volumes, uidConfigVolume)
 
-	if packageSource == WorkflowSourcePackageConfigMap {
-		lambdaConfigMapVolume := corev1.Volume{
-			Name: cr.Spec.Package.FromConfigMap,
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cr.Spec.Package.FromConfigMap,
-					},
-				},
-			},
-		}
-		volumes = append(volumes, lambdaConfigMapVolume)
+	uidConfigVolumeMount := corev1.VolumeMount{
+		Name:      uidConfigVolumeName,
+		MountPath: "/etc/passwd",
+		SubPath:   "passwd",
 	}
+	volumeMountsPrimary = append(volumeMountsPrimary, uidConfigVolumeMount)
 
-	gitVolumeNamePackage := "git-sync-package"
-
-	gitVolumePackage := corev1.Volume{
-		Name: gitVolumeNamePackage,
+	// Download package
+	downloadPackageVolumeName := "download-package"
+	downloadPackageVolume := corev1.Volume{
+		Name: downloadPackageVolumeName,
 		VolumeSource: corev1.VolumeSource{
 			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		},
 	}
+	volumes = append(volumes, downloadPackageVolume)
 
-	volumes = append(volumes, gitVolumePackage)
+	// Path where the downloadPackageVolume gets mounted on the Primary pod
+	packageMount := "/mnt/package"
+	if (cr.Spec.Package != nil) && len(cr.Spec.Package.Mount) > 0 {
+		packageMount = cr.Spec.Package.Mount
+	}
 
+	downloadPackageVolumeMountForPrimary := corev1.VolumeMount{
+		Name:      downloadPackageVolumeName,
+		MountPath: packageMount,
+	}
+	volumeMountsPrimary = append(volumeMountsPrimary, downloadPackageVolumeMountForPrimary)
+
+	// Temp volumes
 	tempVolumeName := "tmp-volume-name"
-
 	tempVolume := corev1.Volume{
 		Name: tempVolumeName,
 		VolumeSource: corev1.VolumeSource{
 			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		},
 	}
-
 	volumes = append(volumes, tempVolume)
-
-	packageMount := "/mnt/package"
-	if (cr.Spec.Package != nil) && len(cr.Spec.Package.Mount) > 0 {
-		packageMount = cr.Spec.Package.Mount
-	}
-
-	gitVolumeMountForPrimary := corev1.VolumeMount{
-		Name:      gitVolumeNamePackage,
-		MountPath: packageMount,
-	}
-
-	volumeMountsPrimary = append(volumeMountsPrimary, gitVolumeMountForPrimary)
 
 	tempVolumeMountPrimary := corev1.VolumeMount{
 		Name:      tempVolumeName,
 		MountPath: "/tmp",
 	}
-
-	// VV: Use this to override UID/GID
-	volMountGitSyncConfig := corev1.VolumeMount{
-		Name:      "git-sync-config",
-		MountPath: "/etc/passwd",
-		SubPath:   "passwd",
-	}
-
 	volumeMountsPrimary = append(volumeMountsPrimary, tempVolumeMountPrimary)
 
-	volumeMountsPrimary = append(volumeMountsPrimary, volMountGitSyncConfig)
-
-	volumeMountsGitSyncPackageContainers := []corev1.VolumeMount{
-		{
-			Name:      gitVolumeNamePackage,
-			MountPath: "/tmp/git",
-		},
-	}
-
-	gitCloneOptions := []string{}
-
-	branchName := ""
-
-	if cr.Spec.Package != nil {
-		branchName = cr.Spec.Package.Branch
-	}
-
-	volumeMountsGitSyncPackageContainers = append(volumeMountsGitSyncPackageContainers,
-		volMountGitSyncConfig)
-
-	overrideCommand := []string{}
-
-	if packageSource == WorkflowSourcePackageSSH {
-		gitCloneOptions = []string{
-			"--one-time", "--depth=1", "--root=/tmp/git", "--submodules=recursive", "--exechook-command"}
-
-		gitCloneOptions = append(gitCloneOptions, "--ssh", "--ssh-key-file=/etc/git-secret/ssh")
-
-		if len(branchName) > 0 {
-			gitCloneOptions = append(gitCloneOptions, "--branch="+branchName)
-		} else if len(cr.Spec.Package.CommitId) > 0 {
-			gitCloneOptions = append(gitCloneOptions, "--rev="+cr.Spec.Package.CommitId)
-		}
-
-		gitCloneOptions = append(gitCloneOptions, "--repo", cr.Spec.Package.URL)
-	} else if packageSource == WorkflowSourcePackageHTTPS {
-		u, err := url.Parse(cr.Spec.Package.URL)
-		if err != nil {
-			return nil, err
-		}
-		gitRoot := strings.Split(u.Path[1:], "/")[1]
-
-		cmdGitInit := ""
-		fullUrl := cr.Spec.Package.URL
-
-		if len(cr.Spec.Package.Gitsecret) > 0 {
-			fullUrl = "https://" + "`cat /etc/git-secret/oauth-token`@" + u.Host + "/" + u.Path[1:]
-		}
-
-		fullPath := "/tmp/git/" + gitRoot
-
-		if len(cr.Spec.Package.CommitId) > 0 {
-			cmdGitInit = "mkdir -p " + fullPath +
-				" && cd " + fullPath +
-				" && git init . " +
-				" && git remote add origin " + fullUrl +
-				" && git fetch --depth 1 origin " + cr.Spec.Package.CommitId +
-				" && git checkout FETCH_HEAD"
-		} else {
-			cmdGitInit = "git clone --recurse-submodules --depth=1 " + fullUrl + " " + fullPath
-
-			if len(branchName) > 0 {
-				cmdGitInit += " --branch=" + branchName
-			}
-		}
-
-		// VV: Remove the origin just to make sure that we do not expose the oauth token
-		cmdGitInit += " && git -C " + fullPath + " submodule update --remote" +
-			" &&  git -C " + fullPath + " remote remove origin"
-
-		gitCloneOptions = []string{cmdGitInit}
-		overrideCommand = []string{"/bin/sh", "-c"}
-	} else if packageSource == WorkflowSourcePackageConfigMap {
-		gitCloneOptions = []string{"/etc/flowir_package/package.json", "/tmp/git/"}
-		volumeMountsGitSyncPackageContainers = append(volumeMountsGitSyncPackageContainers,
-			corev1.VolumeMount{
-				Name:      cr.Spec.Package.FromConfigMap,
-				MountPath: "/etc/flowir_package",
-			})
-		overrideCommand = []string{"/bin/expand_package.py"}
-	}
-
-	//if there is a key it means private repo+ssh url
-	if (cr.Spec.Package != nil) && len(cr.Spec.Package.Gitsecret) > 0 {
-		volumeMountsGitSyncPackageContainers = append(volumeMountsGitSyncPackageContainers,
-			corev1.VolumeMount{
-				Name:      "git-secrets-package",
-				MountPath: "/etc/git-secret",
-			})
-	}
-
-	gitSyncResources := corev1.ResourceList{
+	// Resources for the init containers
+	downloadPackageResources := corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("100m"),
 		corev1.ResourceMemory: resource.MustParse("200Mi"),
 	}
 
-	if cr.Spec.Resources != nil && cr.Spec.Resources.GitFetch != nil {
-		if len(cr.Spec.Resources.GitFetch.Cpu) > 0 {
-			gitSyncResources[corev1.ResourceCPU] = resource.MustParse(cr.Spec.Resources.GitFetch.Cpu)
-		}
-		if len(cr.Spec.Resources.GitFetch.Memory) > 0 {
-			gitSyncResources[corev1.ResourceMemory] = resource.MustParse(cr.Spec.Resources.GitFetch.Memory)
-		}
-	}
+	// There will be one initContainer downloading the package
+	initcontainers := []corev1.Container{}
+	initContainerPackage := corev1.Container{}
 
-	initContainerPackage := corev1.Container{
-		Name:  "git-sync-package",
-		Image: options.GitSyncImage,
-		Resources: corev1.ResourceRequirements{
-			Limits:   gitSyncResources,
-			Requests: gitSyncResources,
-		},
-		ImagePullPolicy: corev1.PullAlways,
-		Args:            gitCloneOptions,
-		SecurityContext: &corev1.SecurityContext{
-			RunAsUser:  &user,
-			RunAsGroup: &user,
-		},
-		VolumeMounts: volumeMountsGitSyncPackageContainers,
-	}
+	if packageSource != WorkflowSourcePackageS3 {
 
-	if len(overrideCommand) > 0 {
-		initContainerPackage.Command = overrideCommand
+		if (cr.Spec.Package != nil) && len(cr.Spec.Package.Gitsecret) > 0 {
+			var mode int32 = 288
+			gitsecretsVolume := corev1.Volume{
+				Name: "git-secrets-package",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName:  cr.Spec.Package.Gitsecret,
+						DefaultMode: &mode,
+					},
+				},
+			}
+			volumes = append(volumes, gitsecretsVolume)
+		}
+
+		if packageSource == WorkflowSourcePackageConfigMap {
+			lambdaConfigMapVolume := corev1.Volume{
+				Name: cr.Spec.Package.FromConfigMap,
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: cr.Spec.Package.FromConfigMap,
+						},
+					},
+				},
+			}
+			volumes = append(volumes, lambdaConfigMapVolume)
+		}
+
+		volumeMountsGitSyncPackageContainers := []corev1.VolumeMount{
+			{
+				Name:      downloadPackageVolumeName,
+				MountPath: "/tmp/git",
+			},
+		}
+		volumeMountsGitSyncPackageContainers = append(volumeMountsGitSyncPackageContainers, uidConfigVolumeMount)
+
+		branchName := ""
+		if cr.Spec.Package != nil {
+			branchName = cr.Spec.Package.Branch
+		}
+
+		overrideCommand := []string{}
+		gitCloneOptions := []string{}
+		if packageSource == WorkflowSourcePackageSSH {
+			gitCloneOptions = []string{
+				"--one-time", "--depth=1", "--root=/tmp/git", "--submodules=recursive", "--exechook-command"}
+
+			gitCloneOptions = append(gitCloneOptions, "--ssh", "--ssh-key-file=/etc/git-secret/ssh")
+
+			if len(branchName) > 0 {
+				gitCloneOptions = append(gitCloneOptions, "--branch="+branchName)
+			} else if len(cr.Spec.Package.CommitId) > 0 {
+				gitCloneOptions = append(gitCloneOptions, "--rev="+cr.Spec.Package.CommitId)
+			}
+
+			gitCloneOptions = append(gitCloneOptions, "--repo", cr.Spec.Package.URL)
+		} else if packageSource == WorkflowSourcePackageHTTPS {
+			u, err := url.Parse(cr.Spec.Package.URL)
+			if err != nil {
+				return nil, err
+			}
+			gitRoot := strings.Split(u.Path[1:], "/")[1]
+
+			cmdGitInit := ""
+			fullUrl := cr.Spec.Package.URL
+
+			if len(cr.Spec.Package.Gitsecret) > 0 {
+				fullUrl = "https://" + "`cat /etc/git-secret/oauth-token`@" + u.Host + "/" + u.Path[1:]
+			}
+
+			fullPath := "/tmp/git/" + gitRoot
+
+			if len(cr.Spec.Package.CommitId) > 0 {
+				cmdGitInit = "mkdir -p " + fullPath +
+					" && cd " + fullPath +
+					" && git init . " +
+					" && git remote add origin " + fullUrl +
+					" && git fetch --depth 1 origin " + cr.Spec.Package.CommitId +
+					" && git checkout FETCH_HEAD"
+			} else {
+				cmdGitInit = "git clone --recurse-submodules --depth=1 " + fullUrl + " " + fullPath
+
+				if len(branchName) > 0 {
+					cmdGitInit += " --branch=" + branchName
+				}
+			}
+
+			// VV: Remove the origin just to make sure that we do not expose the oauth token
+			cmdGitInit += " && git -C " + fullPath + " submodule update --remote" +
+				" &&  git -C " + fullPath + " remote remove origin"
+
+			gitCloneOptions = []string{cmdGitInit}
+			overrideCommand = []string{"/bin/sh", "-c"}
+		} else if packageSource == WorkflowSourcePackageConfigMap {
+			gitCloneOptions = []string{"/etc/flowir_package/package.json", "/tmp/git/"}
+			volumeMountsGitSyncPackageContainers = append(volumeMountsGitSyncPackageContainers,
+				corev1.VolumeMount{
+					Name:      cr.Spec.Package.FromConfigMap,
+					MountPath: "/etc/flowir_package",
+				})
+			overrideCommand = []string{"/bin/expand_package.py"}
+		}
+
+		//if there is a key it means private repo+ssh url
+		if (cr.Spec.Package != nil) && len(cr.Spec.Package.Gitsecret) > 0 {
+			volumeMountsGitSyncPackageContainers = append(volumeMountsGitSyncPackageContainers,
+				corev1.VolumeMount{
+					Name:      "git-secrets-package",
+					MountPath: "/etc/git-secret",
+				})
+		}
+
+		if cr.Spec.Resources != nil && cr.Spec.Resources.GitFetch != nil {
+			if len(cr.Spec.Resources.GitFetch.Cpu) > 0 {
+				downloadPackageResources[corev1.ResourceCPU] = resource.MustParse(cr.Spec.Resources.GitFetch.Cpu)
+			}
+			if len(cr.Spec.Resources.GitFetch.Memory) > 0 {
+				downloadPackageResources[corev1.ResourceMemory] = resource.MustParse(cr.Spec.Resources.GitFetch.Memory)
+			}
+		}
+
+		initContainerPackage = corev1.Container{
+			Name:  "git-sync-package",
+			Image: options.GitSyncImage,
+			Resources: corev1.ResourceRequirements{
+				Limits:   downloadPackageResources,
+				Requests: downloadPackageResources,
+			},
+			ImagePullPolicy: corev1.PullAlways,
+			Args:            gitCloneOptions,
+			SecurityContext: &corev1.SecurityContext{
+				RunAsUser:  &user,
+				RunAsGroup: &user,
+			},
+			VolumeMounts: volumeMountsGitSyncPackageContainers,
+		}
+
+		if len(overrideCommand) > 0 {
+			initContainerPackage.Command = overrideCommand
+		}
+	} else {
+
+		volumeMountsS3PackageDownloadContainers := []corev1.VolumeMount{
+			{
+				Name:      downloadPackageVolumeName,
+				MountPath: "/tmp/s3",
+			},
+		}
+		volumeMountsS3PackageDownloadContainers = append(volumeMountsS3PackageDownloadContainers, uidConfigVolumeMount)
+
+		s3PackageDownloadEnvVars := []corev1.EnvVar{
+			{
+				Name:  "ROOT_OUTPUT",
+				Value: "/tmp/s3",
+			}, {
+				Name:      "S3_ACCESS_KEY_ID",
+				Value:     cr.Spec.Package.S3.AccessKeyID.Value,
+				ValueFrom: cr.Spec.Package.S3.AccessKeyID.ValueFrom,
+			}, {
+				Name:      "S3_SECRET_ACCESS_KEY",
+				Value:     cr.Spec.Package.S3.SecretAccessKey.Value,
+				ValueFrom: cr.Spec.Package.S3.SecretAccessKey.ValueFrom,
+			}, {
+				Name:      "S3_ENDPOINT",
+				Value:     cr.Spec.Package.S3.Endpoint.Value,
+				ValueFrom: cr.Spec.Package.S3.Endpoint.ValueFrom,
+			}, {
+				Name:      "S3_BUCKET",
+				Value:     cr.Spec.Package.S3.Bucket.Value,
+				ValueFrom: cr.Spec.Package.S3.Bucket.ValueFrom,
+			},
+			{
+				Name:      "S3_REGION",
+				Value:     cr.Spec.Package.S3.Region.Value,
+				ValueFrom: cr.Spec.Package.S3.Region.ValueFrom,
+			},
+		}
+
+		s3DownloadCmd := []string{"--workflow", cr.Spec.Package.FromPath}
+		if len(cr.Spec.Package.WithManifest) > 0 {
+			s3DownloadCmd = append(s3DownloadCmd, []string{"--workflow", cr.Spec.Package.FromPath}...)
+		}
+
+		s3FetchFilesImage := ""
+		if cr.Spec.S3FetchFilesImage != "" {
+			s3FetchFilesImage = cr.Spec.S3FetchFilesImage
+		} else {
+			s3FetchFilesImage = options.S3FetchFilesImage
+		}
+
+		initContainerPackage = corev1.Container{
+			Name:            "s3-package-fetch",
+			Image:           s3FetchFilesImage,
+			Args:            s3DownloadCmd,
+			Env:             s3PackageDownloadEnvVars,
+			ImagePullPolicy: corev1.PullAlways,
+			VolumeMounts:    volumeMountsS3PackageDownloadContainers,
+			Resources: corev1.ResourceRequirements{
+				Limits:   downloadPackageResources,
+				Requests: downloadPackageResources,
+			},
+			WorkingDir: "/workdir",
+			SecurityContext: &corev1.SecurityContext{
+				RunAsUser:  &user,
+				RunAsGroup: &user,
+			},
+		}
 	}
 
 	wfMonitorResources := corev1.ResourceList{
@@ -794,7 +866,7 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 	}
 
 	volumeMountsMonitor = append(volumeMountsMonitor, corev1.VolumeMount{
-		Name:      "git-sync-config",
+		Name:      uidConfigVolumeName,
 		MountPath: "/etc/passwd",
 		SubPath:   "passwd",
 	})
@@ -853,6 +925,8 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  "INSTANCE_DIR_NAME",
 			Value: cr.Spec.Instance})
+	} else if packageSource == WorkflowSourcePackageS3 {
+		fullPath = path.Join(packageMount, path.Base(cr.Spec.Package.FromPath))
 	}
 
 	if len(cr.Spec.Package.WithManifest) > 0 {
@@ -863,7 +937,7 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 		}
 	}
 
-	if len(cr.Spec.Package.FromPath) > 0 {
+	if len(cr.Spec.Package.FromPath) > 0 && packageSource != WorkflowSourcePackageS3 {
 		fromPath := cr.Spec.Package.FromPath
 		if fullPath == "" || filepath.IsAbs(fromPath) {
 			fullPath = fromPath
@@ -888,11 +962,10 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 		}
 	}
 
-	initcontainers := []corev1.Container{}
-
 	if packageSource == WorkflowSourcePackageHTTPS ||
 		packageSource == WorkflowSourcePackageSSH ||
-		packageSource == WorkflowSourcePackageConfigMap {
+		packageSource == WorkflowSourcePackageConfigMap ||
+		packageSource == WorkflowSourcePackageS3 {
 		initcontainers = append(initcontainers, initContainerPackage)
 	}
 
@@ -908,7 +981,7 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 			Name: "s3-fetch", MountPath: rootDirS3InputData}
 
 		volumeMountsS3FetchFiles := []corev1.VolumeMount{
-			volMountS3Fetch, volMountGitSyncConfig,
+			volMountS3Fetch, uidConfigVolumeMount,
 		}
 		volumeMountsPrimary = append(volumeMountsPrimary, volMountS3Fetch)
 
@@ -990,8 +1063,8 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 			ImagePullPolicy: corev1.PullAlways,
 			VolumeMounts:    volumeMountsS3FetchFiles,
 			Resources: corev1.ResourceRequirements{
-				Limits:   gitSyncResources,
-				Requests: gitSyncResources,
+				Limits:   downloadPackageResources,
+				Requests: downloadPackageResources,
 			},
 			WorkingDir: "/workdir",
 			SecurityContext: &corev1.SecurityContext{

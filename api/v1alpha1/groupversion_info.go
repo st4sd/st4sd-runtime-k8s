@@ -9,8 +9,8 @@
 */
 
 // Package v1alpha1 contains API Schema definitions for the st4sd v1alpha1 API group
-//+kubebuilder:object:generate=true
-//+groupName=st4sd.ibm.com
+// +kubebuilder:object:generate=true
+// +groupName=st4sd.ibm.com
 package v1alpha1
 
 import (

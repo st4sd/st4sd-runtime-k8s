@@ -1,0 +1,32 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - st4sd.ibm.com
+  resources:
+  - workflows
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - st4sd.ibm.com
+  resources:
+  - workflows/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - st4sd.ibm.com
+  resources:
+  - workflows/status
+  verbs:
+  - get
+  - patch
+  - update

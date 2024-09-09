@@ -16,8 +16,6 @@ docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_TOKEN}
 
 
 IMG=${IMAGE_BASE_URL}:${LABEL}-`arch` \
-       BUILDER_IMG=golang:1.19 \
-       RUNTIME_IMG=gcr.io/distroless/static:nonroot \
        make docker-build
 
 if [ "${DO_PUSH}" == "yes" ]; then

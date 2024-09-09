@@ -45,7 +45,7 @@ GO_ARCH = amd64
 endif
 
 # Image URL to use as the build-layer of the container image
-|BUILDER_IMG ?= golang:1.17
+BUILDER_IMG ?= golang:1.22
 # Image URL to use as the runtime-layer of the container image
 RUNTIME_IMG ?= gcr.io/distroless/static:nonroot
 # Image URL to use all building/pushing image targets

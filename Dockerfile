@@ -3,7 +3,7 @@
 
 # Build the manager binary
 ARG go_arch=amd64
-ARG builder_image=golang:1.19
+ARG builder_image=quay.io/projectquay/golang:1.19
 ARG runtime_image=gcr.io/distroless/static:nonroot
 
 FROM ${builder_image} as builder

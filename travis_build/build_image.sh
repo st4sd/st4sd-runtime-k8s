@@ -12,9 +12,6 @@ export DO_PUSH=${DO_PUSH:-yes}
 export LABEL=${LABEL:-latest}
 docker login -u ${DOCKER_USERNAME} -p ${DOCKER_TOKEN} ${DOCKER_REGISTRY}
 
-docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_TOKEN}
-
-
 IMG=${IMAGE_BASE_URL}:${LABEL}-`arch` \
        make docker-build
 

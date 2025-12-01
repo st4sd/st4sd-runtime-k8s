@@ -18,3 +18,4 @@ IMG=${IMAGE_BASE_URL}:${LABEL}-`arch` \
 if [ "${DO_PUSH}" == "yes" ]; then
   docker push "${IMAGE_BASE_URL}:${LABEL}-`arch`"
 fi
+

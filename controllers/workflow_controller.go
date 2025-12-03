@@ -400,8 +400,7 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 
 		if len(cr.Spec.Package.FromConfigMap) > 0 {
 			if packageSource != WorkflowSourceUnknown {
-				return nil, fmt.Errorf("spec.package.fromConfigMap set but package is already configured " +
-					"as " + packageSource)
+				return nil, fmt.Errorf("spec.package.fromConfigMap set but package is already configured as %s", packageSource)
 			}
 			packageSource = WorkflowSourcePackageConfigMap
 		}

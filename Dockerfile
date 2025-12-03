@@ -3,10 +3,10 @@
 
 # Build the manager binary
 ARG go_arch=amd64
-ARG builder_image=quay.io/projectquay/golang:1.22
+ARG builder_image=mirror.gcr.io/golang:1.25-alpine
 ARG runtime_image=gcr.io/distroless/static:nonroot
 
-FROM ${builder_image} as builder
+FROM ${builder_image} AS builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests

@@ -871,9 +871,10 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 	})
 
 	monitorElaunchContainer := corev1.Container{
-		Name:  "monitor-elaunch-container",
-		Image: options.WorkflowMonitoringImage,
-		Env:   envVars,
+		Name:    "monitor-elaunch-container",
+		Image:   options.WorkflowMonitoringImage,
+		Command: []string{"st4sd-k8s-monitor.py"},
+		Env:     envVars,
 		Lifecycle: &corev1.Lifecycle{
 			PreStop: &corev1.LifecycleHandler{
 				Exec: &corev1.ExecAction{
@@ -984,7 +985,7 @@ func newPodForCR(r *WorkflowReconciler, cr *st4sdv1alpha1.Workflow) (*corev1.Pod
 		}
 		volumeMountsPrimary = append(volumeMountsPrimary, volMountS3Fetch)
 
-		s3FetchCommand := []string{}
+		s3FetchCommand := []string{"st4sd-fetch-files.sh"}
 		s3EnvVars := []corev1.EnvVar{{Name: "ROOT_OUTPUT", Value: rootDirS3InputData}}
 
 		if cr.Spec.S3BucketInput.Dataset != "" {
